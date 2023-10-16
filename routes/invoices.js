@@ -65,27 +65,47 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
     try {
         const {
-            amt
+            amt,
+            paid
         } = req.body;
         const {
             id
         } = req.params;
-        const results = await db.query(`UPDATE invoices SET amt=$1 WHERE id =$2 RETURNING *`, [amt, id]);
-        if (results.rows.length === 0) {
-            throw new ExpressError(`Can't find invoice with code of ${id}`, 404)
+        let paidDate = null;
+        const currentResult = await db.query(`SELECT paid FROM invoices WHERE id = $1`, [id]);
+        if (currentResult.rows.length === 0) {
+            throw new ExpressError(`No such invoice: ${id}`, 404);
         }
+        const isPaid = currentResult.rows[0].paid;
+
+        if (paid === true && !isPaid) {
+            paidDate = new Date();
+        } else if (paid === false && isPaid) {
+            paidDate = null;
+        } else {
+            paidDate = currentResult.paid_date;
+        }
+        const updateResult = await db.query(
+            'UPDATE invoices SET amt = $1, paid = $2, paid_date = $3 WHERE id = $4 RETURNING *',
+            [amt, paid, paidDate, id]
+        );
+
+        if (updateResult.rows.length === 0) {
+            throw new ExpressError(`Unable to update invoice with id: ${id}`, 500);
+        }
+
         return res.json({
-            invoice: results.rows[0]
-        })
+            invoice: updateResult.rows[0]
+        });
     } catch (e) {
-        return next(e)
+        return next(e);
     }
-})
+});
 
 
 router.delete('/:id', async (req, res, next) => {
     try {
-        const results = db.query(`DELETE FROM invoices WHERE code = $1`, [req.params.id]);
+        const results = db.query(`DELETE FROM invoices WHERE id = $1`, [req.params.id]);
         return res.send({
             msg: 'Invoice Deleted'
         })
